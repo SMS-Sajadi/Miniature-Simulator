@@ -1,12 +1,13 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include<time.h>
 
 #define R_type 1
 #define I_type 2
 #define J_type 3
 
-#define dash_line printf("------------------------------------------------\n")
+#define dash_line printf("-------------------------------------------------------------------------\n")
 
 const char* inst[] = { "add","sub","slt","or","nand","addi","slti","ori","lui","lw","sw","beq","jalr","j","halt" };
 
@@ -26,6 +27,60 @@ struct instruction
     int imm;
     int ins_count;
 };
+
+void print_inst(struct instruction* current_inst, int ALUres)
+{
+    printf("Current Instruction is:");
+    switch (current_inst->type)
+    {
+    case R_type:
+        printf("\t%s  %d,%d,%d\n", current_inst->mnemonic, current_inst->rd, current_inst->rs, current_inst->rt);
+        if (current_inst->rd != 0)
+            printf("R%d = %d ----> ", current_inst->rd, R[current_inst->rd]);
+        else printf("R%d = %d ----> 0\n", current_inst->rd, R[current_inst->rd]);
+        break;
+    case I_type:
+        if (current_inst->opcode == 8) printf("\t%s  %d,%d\n", current_inst->mnemonic, current_inst->rt, current_inst->imm);
+        else if (current_inst->opcode == 12) printf("\t%s  %d,%d\n", current_inst->mnemonic, current_inst->rt, current_inst->rs);
+        else if (current_inst->opcode == 11) printf("\t%s  %d,%d,%d\n", current_inst->mnemonic, current_inst->rs, current_inst->rt, current_inst->imm);
+        else printf("\t%s  %d,%d,%d\n", current_inst->mnemonic, current_inst->rt, current_inst->rs, current_inst->imm);
+        if (current_inst->opcode != 10 && current_inst->opcode != 11)
+        {
+            if (current_inst->rt != 0) printf("R%d = %d ----> ", current_inst->rt, R[current_inst->rt]);
+            else printf("R0 = 0 ----> 0\n", current_inst->rt, R[current_inst->rt]);
+        }
+        else if (current_inst->opcode == 10) printf("Mem(%d) = %d ----> ", ALUres, mem[ALUres]);
+        break;
+    case J_type:
+        if (current_inst->opcode != 14) printf("\t%s  %d\n", current_inst->mnemonic, current_inst->imm);
+        else printf("\t%s\n", current_inst->mnemonic);
+        break;
+    }
+}
+
+void print_change(struct instruction* current_inst, int ALUres, int MEMres, int PC)
+{
+    switch (current_inst->type)
+    {
+    case R_type:
+        if (current_inst->rd != 0) printf("%d\n", ALUres);
+        printf("R%d = %d and R%d = %d\n\n", current_inst->rs, R[current_inst->rs], current_inst->rt, R[current_inst->rt]);
+        break;
+    case I_type:
+        if (current_inst->rt != 0)
+        {
+            if (current_inst->opcode == 9) printf("Mem(%d) = %d\n", ALUres, MEMres);
+            else if (current_inst->opcode == 10) printf("%d\n", current_inst->rt);
+            else if (current_inst->opcode == 12) printf("%d\n", PC + 1);
+            else if (current_inst->opcode != 11) printf("%d\n", ALUres);
+        }
+        printf("R%d = %d and R%d = %d and IMM = %d\n\n", current_inst->rs, R[current_inst->rs], current_inst->rt, R[current_inst->rt], current_inst->imm);
+        break;
+    case J_type:
+        printf("Offset = %d\n\n", current_inst->imm);
+        break;
+    }
+}
 
 int SE(int num)
 {
@@ -47,7 +102,7 @@ void Loader(FILE* input_file, int* PC)
     int entry, size = 0;
     struct instruction temp;
     //change to bool
-    bool first = true, flag = false;
+    int first = 1, flag = 0;
     while (fscanf(input_file, "%d\n", &entry) != EOF) size++;
     machine_code = (int*)malloc(4 * size);
     fseek(input_file, 0, SEEK_SET);
@@ -59,7 +114,7 @@ void Loader(FILE* input_file, int* PC)
         if (0 > temp.opcode || temp.opcode > 14 || entry >> 28 != 0)
         {
             mem[size - 1] = entry;
-            flag = true;
+            flag = 1;
         }
         else if (temp.opcode < 5)
         {
@@ -73,7 +128,7 @@ void Loader(FILE* input_file, int* PC)
             if (temp.rd > 15 || temp.rt > 15 || temp.rs > 15 || (entry & help) != 0)
             {
                 mem[size - 1] = entry;
-                flag = true;
+                flag = 1;
             }
         }
         else if (temp.opcode < 13)
@@ -85,7 +140,7 @@ void Loader(FILE* input_file, int* PC)
             if (temp.rt > 15 || temp.rs > 15)
             {
                 mem[size - 1] = entry;
-                flag = true;
+                flag = 1;
             }
         }
         else
@@ -93,15 +148,15 @@ void Loader(FILE* input_file, int* PC)
             if ((entry & 0x00ff0000) != 0)
             {
                 mem[size - 1] = entry;
-                flag = true;
+                flag = 1;
             }
         }
         if (!flag && first)
         {
             *PC = size - 1;
-            first = false;
+            first = 0;
         }
-        flag = false;
+        flag = 0;
     }
     rewind(input_file);
     return;
@@ -182,8 +237,7 @@ int EXE(struct instruction* current_inst)
         return R[current_inst->rs] | R[current_inst->rt];
         break;
     case 4:
-        //nand, wht do and?
-        return R[current_inst->rs] & R[current_inst->rt];
+        return ~(R[current_inst->rs] & R[current_inst->rt]);
         break;
     case 5:
         return R[current_inst->rs] + SE(current_inst->imm);
@@ -284,16 +338,22 @@ int main(int argc, char** argv) {
     int MEMres;
     int PC;
     struct instruction current_inst;
+    time_t start, end;
+    double diff_time, total_time = 0;
 
     current_inst.ins_count = 0;
 
-    printf("loading\n");
+    dash_line;
+    printf("\tLoading the Program...\n\t...\n");
     Loader(machp, &PC);
-    printf("loading done\n");
-    printf("Start Address is: %d", PC);
+    printf("\tProgram Loaded\a\n");
+    printf("\tStart Address is: %d\n", PC);
 
     while (1)
     {
+        //calculating start time
+        start = clock();
+
         IF(&current_inst, PC);
         temp = ID_part1(&current_inst);
         if (temp == -1)
@@ -301,13 +361,30 @@ int main(int argc, char** argv) {
             PC++;
             continue;
         }
+        dash_line;
+        current_inst.ins_count++;
         ALUres = EXE(&current_inst);
+        //Printing the instruction for better understanding
+        print_inst(&current_inst, ALUres);
+
         MEMres = MEM(&current_inst, ALUres);
+        //printing changes
+        print_change(&current_inst, ALUres, MEMres, PC);
+
         WB(&current_inst, MEMres, PC);
         ID_part2(&current_inst, &PC, MEMres);
+        //calculating end time and difference
+        end = clock();
+        diff_time = (double)(end - start) / CLOCKS_PER_SEC;
+        total_time += diff_time;
+        printf("Time that is taken by this Instruction is: %f seconds\n", diff_time);
+        dash_line;
+
         if (current_inst.opcode == 14) break;
     }
+    printf("\n--This simulator executed %d instructions in %f seconds--\a\n\n", current_inst.ins_count, total_time);
 
+    free(machine_code);
     fclose(machp);
     return 0;
 }
