@@ -2,6 +2,7 @@
 #include<stdlib.h>
 #include<string.h>
 #include<time.h>
+#include<stdbool.h>
 
 #define R_type 1
 #define I_type 2
@@ -12,7 +13,7 @@
 const char* inst[] = {"add","sub","slt","or","nand","addi","slti","ori","lui","lw","sw","beq","jalr","j","halt"};
 
 int mem[16000];
-short int mem_use[16000];
+bool mem_use[16000];
 int* machine_code;
 int R[16];
 
@@ -102,8 +103,7 @@ void Loader(FILE* input_file, int* PC, int* MEM_usage)
 {
     int entry, size = 0;
     struct instruction temp;
-    //change to bool
-    int first = 1, flag = 0;
+    bool first = true, flag = false;
     while(fscanf(input_file, "%d\n", &entry) != EOF) size++;
     *MEM_usage = size;
     machine_code = (int*)malloc(4 * size);
@@ -116,7 +116,7 @@ void Loader(FILE* input_file, int* PC, int* MEM_usage)
         if(0 > temp.opcode || temp.opcode > 14 || entry >> 28 != 0)
         {
             mem[size - 1] = entry;
-            flag = 1;
+            flag = true;
         }
         else if(temp.opcode < 5)
         {
@@ -130,7 +130,7 @@ void Loader(FILE* input_file, int* PC, int* MEM_usage)
             if(temp.rd > 15 || temp.rt > 15 || temp.rs > 15 || (entry & help) != 0)
             {
                 mem[size - 1] = entry;
-                flag = 1;
+                flag = true;
             }
         }
         else if(temp.opcode < 13)
@@ -142,7 +142,7 @@ void Loader(FILE* input_file, int* PC, int* MEM_usage)
             if(temp.rt > 15 || temp.rs > 15)
             {
                 mem[size - 1] = entry;
-                flag = 1;
+                flag = true;
             }
         }
         else
@@ -150,15 +150,15 @@ void Loader(FILE* input_file, int* PC, int* MEM_usage)
             if((entry & 0x00ff0000) != 0)
             {
                 mem[size - 1] = entry;
-                flag = 1;
+                flag = true;
             }
         }
         if(!flag && first)
         {
             *PC = size - 1;
-            first = 0;
+            first = false;
         }
-        flag = 0;
+        flag = false;
     }
     rewind(input_file);
     return;
@@ -274,19 +274,19 @@ int MEM(struct instruction* current_inst, int ALUres, int* MEM_read, int* MEM_wr
     {
         case 9:
             (*MEM_read)++;
-            if(mem_use[ALUres] == 0)
+            if(mem_use[ALUres] == false)
             {
                 (*MEM_usage)++;
-                mem_use[ALUres] = 1;
+                mem_use[ALUres] = true;
             }
             return mem[ALUres];
             break;
         case 10:
             (*MEM_write)++;
-            if(mem_use[ALUres] == 0)
+            if(mem_use[ALUres] == false)
             {
                 (*MEM_usage)++;
-                mem_use[ALUres] = 1;
+                mem_use[ALUres] = true;
             }
             mem[ALUres] = R[current_inst->rt];
             return ALUres;
@@ -372,7 +372,7 @@ int main(int argc, char** argv) {
     printf("\tProgram Loaded\a\n");
     printf("\tStart Address is: %d\n", PC);
 
-    while(1)
+    while(true)
     {
         //calculating start time
         start = clock();
